@@ -12,7 +12,7 @@ import numpy as np
 from numpy import array
 
 from rl.env import Env
-from rl.transition import Transition
+from rl.agent import Agent
 
 
 @dataclass
@@ -28,24 +28,6 @@ class ReplayMemory:
     percentile: float
     size: int
 
-    def append(self, episode: Episode, reward: float) -> None:
-        self.episodes.append(episode)
-        self.rewards.append(reward)
-
-    def batch(self) -> Tuple[Tensor, Tensor]:
-        reward_bound = np.percentile(self.rewards, q=self.percentile)
-        obs: List[array] = []
-        actions: List[int] = []
-        for i, reward in enumerate(self.rewards):
-            if reward >= reward_bound:
-                episode = self.episodes[i]
-                obs += episode.obs
-                actions += episode.action
-        return torch.tensor(obs).float(), torch.tensor(actions)
-
-    def __len__(self) -> int:
-        return len(self.episodes)
-
 
 @dataclass
 class CrossEntropy:
@@ -55,39 +37,66 @@ class CrossEntropy:
     episode: Episode = field(default_factory=Episode, init=False)
     reward: float = field(default=0.0, init=False)
 
-    def select_action(self, obs: array) -> int:
-        obs = torch.from_numpy(obs).float()
-        logits = self.policy(obs)
-        m = distributions.Categorical(logits=logits)
-        return int(m.sample())
 
-    def store_transition(self, transition: Transition) -> None:
-        self.episode.obs.append(transition.obs)
-        self.episode.action.append(transition.action)
-        self.reward += transition.reward
-
-    def episode_start(self) -> None:
-        pass
-
-    def episode_end(self) -> None:
-        self.memory.append(self.episode, self.reward)
-        self.episode = Episode()
-        self.reward = 0.0
-        if len(self.memory) == self.memory.size:
-            obs, actions = self.memory.batch()
-            self.optimizer.zero_grad()
-            logits = self.policy(obs)
-            F.cross_entropy(logits, actions).backward()
-            self.optimizer.step()
+def remember(memory: ReplayMemory, episode: Episode, reward: float) -> None:
+    memory.episodes.append(episode)
+    memory.rewards.append(reward)
 
 
-def cross_entropy(env: Env,
-                  hidden_layers: List[int],
-                  activation: nn.Module,
-                  learning_rate: float,
-                  memory_size: int,
-                  percentile: float
-                  ) -> CrossEntropy:
+def batch(memory: ReplayMemory) -> Tuple[Tensor, Tensor]:
+    reward_bound = np.percentile(memory.rewards, q=memory.percentile)
+    obs: List[array] = []
+    actions: List[int] = []
+    for i, reward in enumerate(memory.rewards):
+        if reward >= reward_bound:
+            episode = memory.episodes[i]
+            obs += episode.obs
+            actions += episode.action
+    return torch.tensor(obs).float(), torch.tensor(actions)
+
+
+def select_action(agent: CrossEntropy, obs: array) -> int:
+    obs = torch.from_numpy(obs).float()
+    logits = agent.policy(obs)
+    m = distributions.Categorical(logits=logits)
+    return int(m.sample())
+
+
+def improve_policy(agent: CrossEntropy) -> None:
+    if len(agent.memory.episodes) < agent.memory.size:
+        return
+    obs, actions = batch(agent.memory)
+    agent.optimizer.zero_grad()
+    logits = agent.policy(obs)
+    F.cross_entropy(logits, actions).backward()
+    agent.optimizer.step()
+
+
+def episode(agent: CrossEntropy, env: Env) -> float:
+    done = False
+    obs = env.reset()
+    while not done:
+        action = select_action(agent, obs)
+        next_obs, reward, done, _ = env.step(action)
+        agent.episode.obs.append(obs)
+        agent.episode.action.append(action)
+        agent.reward += reward
+        obs = next_obs
+    reward = agent.reward
+    remember(agent.memory, agent.episode, agent.reward)
+    agent.episode = Episode()
+    agent.reward = 0.0
+    improve_policy(agent)
+    return reward
+
+
+def agent(env: Env,
+          hidden_layers: List[int] = [20, 20],
+          activation: nn.Module = nn.LeakyReLU(),
+          learning_rate: float = 0.01,
+          memory_size: int = 20,
+          percentile: float = 70.0
+          ) -> Agent[CrossEntropy]:
     layers: List[nn.Module] = []
     input_size = env.observation_space.shape[0]
     for hidden_layer in hidden_layers:
@@ -101,4 +110,4 @@ def cross_entropy(env: Env,
                           rewards=deque(maxlen=memory_size),
                           percentile=percentile,
                           size=memory_size)
-    return CrossEntropy(policy, optimizer, memory)
+    return CrossEntropy(policy, optimizer, memory), episode

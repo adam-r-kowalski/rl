@@ -9,7 +9,15 @@ import torch.distributions as distributions
 from numpy import array
 
 from rl.env import Env
-from rl.transition import Transition
+from rl.agent import Agent
+
+
+@dataclass
+class PolicyGradient:
+    policy: nn.Module
+    optimizer: Optimizer
+    rewards: List[float] = field(default_factory=list, init=False)
+    log_probs: List[Tensor] = field(default_factory=list, init=False)
 
 
 def discount(rewards: Tensor, gamma: float) -> Tensor:
@@ -25,41 +33,43 @@ def normalize(rewards: Tensor) -> Tensor:
     return (rewards - torch.mean(rewards)) / torch.std(rewards)
 
 
-@dataclass
-class PolicyGradient:
-    policy: nn.Module
-    optimizer: Optimizer
-    rewards: List[float] = field(default_factory=list, init=False)
-    log_probs: List[Tensor] = field(default_factory=list, init=False)
-
-    def select_action(self, obs: array) -> int:
-        obs = torch.from_numpy(obs).float()
-        probs = self.policy(obs)
-        m = distributions.Categorical(probs=probs)
-        action = m.sample()
-        self.log_probs.append(m.log_prob(action))
-        return int(action)
-
-    def store_transition(self, transition: Transition) -> None:
-        self.rewards.append(transition.reward)
-
-    def episode_start(self) -> None:
-        self.optimizer.zero_grad()
-
-    def episode_end(self) -> None:
-        log_probs = torch.stack(self.log_probs)
-        returns = normalize(discount(torch.tensor(self.rewards), gamma=0.9))
-        torch.sum(-log_probs * returns).backward()
-        self.optimizer.step()
-        self.rewards = []
-        self.log_probs = []
+def select_action(agent: PolicyGradient, obs: array) -> int:
+    obs = torch.from_numpy(obs).float()
+    probs = agent.policy(obs)
+    m = distributions.Categorical(probs=probs)
+    action = m.sample()
+    agent.log_probs.append(m.log_prob(action))
+    return int(action)
 
 
-def policy_gradient(env: Env,
-                    hidden_layers: List[int],
-                    activation: nn.Module,
-                    learning_rate: float,
-                    ) -> PolicyGradient:
+def improve_policy(agent: PolicyGradient) -> None:
+    log_probs = torch.stack(agent.log_probs)
+    returns = normalize(discount(torch.tensor(agent.rewards), gamma=0.9))
+    torch.sum(-log_probs * returns).backward()
+    agent.optimizer.step()
+    agent.rewards = []
+    agent.log_probs = []
+
+
+def episode(agent: PolicyGradient, env: Env) -> float:
+    agent.optimizer.zero_grad()
+    done = False
+    obs = env.reset()
+    while not done:
+        action = select_action(agent, obs)
+        obs, reward, done, _ = env.step(action)
+        agent.rewards.append(reward)
+    rewards = sum(agent.rewards)
+    improve_policy(agent)
+    return rewards
+
+
+def agent(env: Env,
+          hidden_layers: List[int] = [20, 20],
+          activation: nn.Module = nn.LeakyReLU(),
+          learning_rate: float = 0.01,
+          discount_factor: float = 0.9
+          ) -> Agent[PolicyGradient]:
     layers: List[nn.Module] = []
     input_size = env.observation_space.shape[0]
     for hidden_layer in hidden_layers:
@@ -70,4 +80,4 @@ def policy_gradient(env: Env,
     layers.append(nn.Softmax())
     policy = nn.Sequential(*layers)
     optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
-    return PolicyGradient(policy, optimizer)
+    return PolicyGradient(policy, optimizer), episode

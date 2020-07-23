@@ -1,23 +1,7 @@
-from typing import Protocol
-from abc import abstractmethod
-from numpy import array
+from typing import TypeVar, Callable, Tuple
 
-from rl.transition import Transition
+from rl.env import Env
 
-
-class Agent(Protocol):
-    @abstractmethod
-    def select_action(self, obs: array) -> int:
-        raise NotImplementedError
-
-    @abstractmethod
-    def store_transition(self, transition: Transition) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def episode_start(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def episode_end(self) -> None:
-        raise NotImplementedError
+T = TypeVar('T')
+Episode = Callable[[T, Env], float]
+Agent = Tuple[T, Episode[T]]

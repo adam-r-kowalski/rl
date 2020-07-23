@@ -1,21 +1,11 @@
 import gym
-import torch.nn as nn
 
-from rl.cross_entropy import cross_entropy
-from rl.simulate import simulate
-import rl.monitor as monitor
+import rl.cross_entropy as cross_entropy
 
 
 def test_cross_entropy():
     env = gym.make('CartPole-v1')
-    agent = cross_entropy(env,
-                          hidden_layers=[20, 20],
-                          activation=nn.LeakyReLU(),
-                          learning_rate=0.01,
-                          memory_size=20,
-                          percentile=70)
-    simulate(env, agent,
-             monitor.Compose([monitor.Progress(),
-                              monitor.Plot(),
-                              monitor.Render()]),
-             episodes=400)
+    agent, episode = cross_entropy.agent(env)
+    episodes = 400
+    for i in range(episodes):
+        print(f'{i}/{episodes} = {episode(agent, env)}')
