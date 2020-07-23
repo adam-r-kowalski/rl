@@ -93,7 +93,7 @@ def episode(agent: CrossEntropy, env: Env) -> float:
 def agent(env: Env,
           hidden_layers: List[int] = [20, 20],
           activation: nn.Module = nn.LeakyReLU(),
-          learning_rate: float = 0.01,
+          learning_rate: float = 1e-2,
           memory_size: int = 20,
           percentile: float = 70.0
           ) -> Agent[CrossEntropy]:

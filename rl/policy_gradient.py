@@ -67,7 +67,7 @@ def episode(agent: PolicyGradient, env: Env) -> float:
 def agent(env: Env,
           hidden_layers: List[int] = [20, 20],
           activation: nn.Module = nn.LeakyReLU(),
-          learning_rate: float = 0.01,
+          learning_rate: float = 1e-2,
           discount_factor: float = 0.9
           ) -> Agent[PolicyGradient]:
     layers: List[nn.Module] = []
