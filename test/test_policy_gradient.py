@@ -15,5 +15,5 @@ def test_policy_gradient():
     simulate(env, agent,
              monitor.Compose([monitor.Progress(),
                               monitor.Plot(),
-                              monitor.RenderBest()]),
+                              monitor.Render()]),
              episodes=400)

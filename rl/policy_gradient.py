@@ -1,9 +1,10 @@
 from typing import List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import torch
 from torch import Tensor
 import torch.nn as nn
 import torch.optim as optim
+from torch.optim.optimizer import Optimizer
 import torch.distributions as distributions
 from numpy import array
 
@@ -27,9 +28,9 @@ def normalize(rewards: Tensor) -> Tensor:
 @dataclass
 class PolicyGradient:
     policy: nn.Module
-    optimizer: optim.Optimizer
-    rewards: List[float]
-    log_probs: List[Tensor]
+    optimizer: Optimizer
+    rewards: List[float] = field(default_factory=list, init=False)
+    log_probs: List[Tensor] = field(default_factory=list, init=False)
 
     def select_action(self, obs: array) -> int:
         obs = torch.from_numpy(obs).float()
@@ -57,7 +58,7 @@ class PolicyGradient:
 def policy_gradient(env: Env,
                     hidden_layers: List[int],
                     activation: nn.Module,
-                    learning_rate: float
+                    learning_rate: float,
                     ) -> PolicyGradient:
     layers: List[nn.Module] = []
     input_size = env.observation_space.shape[0]
@@ -69,4 +70,4 @@ def policy_gradient(env: Env,
     layers.append(nn.Softmax())
     policy = nn.Sequential(*layers)
     optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
-    return PolicyGradient(policy, optimizer, rewards=[], log_probs=[])
+    return PolicyGradient(policy, optimizer)
