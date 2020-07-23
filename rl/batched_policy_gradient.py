@@ -13,12 +13,14 @@ from rl.agent import Agent
 
 
 @dataclass
-class PolicyGradient:
+class BatchedPolicyGradient:
     policy: nn.Module
     optimizer: Optimizer
+    batch_size: int
     discount_factor: float
     rewards: List[float] = field(default_factory=list, init=False)
     log_probs: List[Tensor] = field(default_factory=list, init=False)
+    losses: List[Tensor] = field(default_factory=list, init=False)
 
 
 def discount(rewards: Tensor, gamma: float) -> Tensor:
@@ -34,7 +36,7 @@ def normalize(rewards: Tensor) -> Tensor:
     return (rewards - torch.mean(rewards)) / torch.std(rewards)
 
 
-def select_action(agent: PolicyGradient, obs: array) -> int:
+def select_action(agent: BatchedPolicyGradient, obs: array) -> int:
     obs = torch.from_numpy(obs).float()
     probs = agent.policy(obs)
     m = distributions.Categorical(probs=probs)
@@ -43,18 +45,21 @@ def select_action(agent: PolicyGradient, obs: array) -> int:
     return int(action)
 
 
-def improve_policy(agent: PolicyGradient) -> None:
+def improve_policy(agent: BatchedPolicyGradient) -> None:
     log_probs = torch.stack(agent.log_probs)
     discounted = discount(torch.tensor(agent.rewards), agent.discount_factor)
     returns = normalize(discounted)
-    torch.sum(-log_probs * returns).backward()
-    agent.optimizer.step()
+    agent.losses.append(torch.sum(-log_probs * returns))
     agent.rewards = []
     agent.log_probs = []
+    if len(agent.losses) >= agent.batch_size:
+        torch.sum(torch.stack(agent.losses)).backward()
+        agent.optimizer.step()
+        agent.optimizer.zero_grad()
+        agent.losses = []
 
 
-def episode(agent: PolicyGradient, env: Env) -> float:
-    agent.optimizer.zero_grad()
+def episode(agent: BatchedPolicyGradient, env: Env) -> float:
     done = False
     obs = env.reset()
     while not done:
@@ -70,8 +75,9 @@ def agent(env: Env,
           hidden_layers: List[int] = [2**5, 2**5],
           activation: nn.Module = nn.LeakyReLU(),
           learning_rate: float = 1e-2,
+          batch_size: int = 5,
           discount_factor: float = 0.99
-          ) -> Agent[PolicyGradient]:
+          ) -> Agent[BatchedPolicyGradient]:
     layers: List[nn.Module] = []
     input_size = env.observation_space.shape[0]
     for hidden_layer in hidden_layers:
@@ -82,4 +88,8 @@ def agent(env: Env,
     layers.append(nn.Softmax())
     policy = nn.Sequential(*layers)
     optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
-    return PolicyGradient(policy, optimizer, discount_factor), episode
+    agent = BatchedPolicyGradient(policy,
+                                  optimizer,
+                                  batch_size,
+                                  discount_factor)
+    return agent, episode

@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Protocol, Tuple, Sequence
+from typing import Protocol, Tuple, Sequence, Callable
 from numpy import ndarray
 
 
@@ -43,3 +43,6 @@ class Env(Protocol):
     @abstractmethod
     def close(self) -> None:
         raise NotImplementedError
+
+
+MakeEnv = Callable[[], Env]

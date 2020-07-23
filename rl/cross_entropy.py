@@ -72,7 +72,7 @@ def improve_policy(agent: CrossEntropy) -> None:
     agent.optimizer.step()
 
 
-def episode(agent: CrossEntropy, env: Env) -> float:
+def episode(agent: CrossEntropy, env: Env, render: bool = False) -> float:
     done = False
     obs = env.reset()
     while not done:
@@ -82,6 +82,8 @@ def episode(agent: CrossEntropy, env: Env) -> float:
         agent.episode.action.append(action)
         agent.reward += reward
         obs = next_obs
+        if render:
+            env.render()
     reward = agent.reward
     remember(agent.memory, agent.episode, agent.reward)
     agent.episode = Episode()
@@ -91,7 +93,7 @@ def episode(agent: CrossEntropy, env: Env) -> float:
 
 
 def agent(env: Env,
-          hidden_layers: List[int] = [20, 20],
+          hidden_layers: List[int] = [2**5, 2**5],
           activation: nn.Module = nn.LeakyReLU(),
           learning_rate: float = 1e-2,
           memory_size: int = 20,
